@@ -122,37 +122,37 @@ func (m *Mock) Mock(path, resp string, callback ...func(*http.Request) int) *moc
 	return mr
 }
 
-func (m *Mock) AssertCallCount(t *testing.T, method, path string, expected int) {
+func (m *Mock) AssertCallCount(tb testing.TB, method, path string, expected int) {
 	m.Lock()
 	cnt, ok := m.callCount[method+path]
 	if !ok {
-		t.Errorf("mocked but never called path: %s method: %s", path, method)
+		tb.Errorf("mocked but never called path: %s method: %s", path, method)
 		m.Unlock()
 		return
 	}
 	m.assertCallCountCalled[method+path] = true
 	m.Unlock()
-	assert.Equal(t, expected, cnt, path)
+	assert.Equal(tb, expected, cnt, path)
 }
 
-func (m *Mock) AssertCallCountAsserted(t *testing.T) {
+func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
 	for url, cnt := range m.callCount {
 		if _, ok := m.assertCallCountCalled[url]; !ok {
-			t.Errorf("url: %s is mocked but never asserted. It was called %d times", url, cnt)
+			tb.Errorf("url: %s is mocked but never asserted. It was called %d times", url, cnt)
 		}
 	}
 }
 
-func (m *Mock) AssertNoMissingMocks(t *testing.T) {
+func (m *Mock) AssertNoMissingMocks(tb testing.TB) {
 	for url, cnt := range m.unmockedRequests {
-		t.Errorf("url: %s is called but not mocked. It was called %d times", url, cnt)
+		tb.Errorf("url: %s is called but not mocked. It was called %d times", url, cnt)
 	}
 }
 
-func (m *Mock) AssertMocksCalled(t *testing.T) {
+func (m *Mock) AssertMocksCalled(tb testing.TB) {
 	for _, mr := range m.mockResponses {
 		if _, ok := m.callCount[mr.method+mr.path]; !ok {
-			t.Errorf("%s %s mocked but never called.", mr.method, mr.path)
+			tb.Errorf("%s %s mocked but never called.", mr.method, mr.path)
 		}
 	}
 }
