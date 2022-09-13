@@ -58,9 +58,11 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mr.Unlock()
 
 	var status int
+	m.Lock()
 	if len(mr.callbacks) > 0 {
 		status = mr.callbacks[m.callCount[method+path]](r)
 	}
+	m.Unlock()
 
 	m.Lock()
 	m.callCount[method+path]++
