@@ -38,7 +38,7 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var mr *mockResponse
 	m.Lock()
 	for _, v := range m.mockResponses {
-		if v.path == path && v.method == method {
+		if v.path == path && v.method == method && v.checkFilter(r) {
 			mr = v
 			break
 		}
@@ -83,6 +83,7 @@ type mockResponse struct {
 	method    string
 	httpMock  *Mock
 	callbacks []func(*http.Request) int
+	filter    func(*http.Request) bool
 	sync.Mutex
 }
 
@@ -97,6 +98,18 @@ func (mr *mockResponse) SetMethod(method string) *mockResponse {
 	mr.method = method
 	mr.Unlock()
 	return mr
+}
+func (mr *mockResponse) Filter(callback func(*http.Request) bool) *mockResponse {
+	mr.Lock()
+	mr.filter = callback
+	mr.Unlock()
+	return mr
+}
+func (mr *mockResponse) checkFilter(r *http.Request) bool {
+	if mr.filter == nil {
+		return true
+	}
+	return mr.filter(r)
 }
 
 func (m *Mock) URL() string {
