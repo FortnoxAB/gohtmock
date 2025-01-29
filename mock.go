@@ -37,13 +37,13 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	var mr *mockResponse
 	m.Lock()
+	defer m.Unlock()
 	for _, v := range m.mockResponses {
 		if v.path == path && v.method == method && v.checkFilter(r) {
 			mr = v
 			break
 		}
 	}
-	m.Unlock()
 	if mr == nil {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "%s not found", path)
@@ -51,22 +51,16 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mr.Lock()
 	for k, v := range mr.headers {
 		w.Header().Set(k, v)
 	}
-	mr.Unlock()
 
 	var status int
-	m.Lock()
 	if len(mr.callbacks) > 0 {
 		status = mr.callbacks[m.callCount[method+path]](r)
 	}
-	m.Unlock()
 
-	m.Lock()
 	m.callCount[method+path]++
-	m.Unlock()
 	if status != 0 {
 		w.WriteHeader(status)
 	}

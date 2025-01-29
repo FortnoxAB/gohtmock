@@ -1,7 +1,7 @@
 package gohtmock
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 
@@ -24,7 +24,7 @@ func TestMock(t *testing.T) {
 	resp, err = http.Get(mock.URL() + "/test")
 	assert.NoError(t, err)
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, "ok", string(body))
 	mock.AssertCallCount(t, "GET", "/test", 1)
