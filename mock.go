@@ -113,6 +113,7 @@ type mockResponse struct {
 	responder func(http.ResponseWriter, *http.Request)
 	filter    func(*http.Request) bool
 	callCount int
+	maxcalls  int
 	asserted  bool
 	sync.Mutex
 }
@@ -123,25 +124,62 @@ func (mr *mockResponse) SetHeader(key, value string) *mockResponse {
 	mr.Unlock()
 	return mr
 }
+
 func (mr *mockResponse) SetMethod(method string) *mockResponse {
 	mr.Lock()
 	mr.method = method
 	mr.Unlock()
 	return mr
 }
+
+// Filter sets a callback function to filter incoming HTTP requests.
+// Only requests for which the callback returns true will match this mock response.
 func (mr *mockResponse) Filter(callback func(*http.Request) bool) *mockResponse {
 	mr.Lock()
 	mr.filter = callback
 	mr.Unlock()
 	return mr
 }
+
+// Once sets the maximum number of times this mock response can be used to 1.
+// This is useful for ensuring the mock is only matched a single time in tests.
+func (mr *mockResponse) Once() {
+	mr.maxcalls = 1
+}
+
+// Times sets the maximum number of times this mock response can be used.
+// Use this to specify how many times the mock should match incoming requests.
+func (mr *mockResponse) Times(n int) {
+	mr.maxcalls = n
+}
+
+// AssertCallCount asserts that the mock response was called the expected number of times.
+// It marks the mock as asserted and reports an error if the call count does not match.
+func (mr *mockResponse) AssertCallCount(tb testing.TB, expected int) {
+	mr.Lock()
+	defer mr.Unlock()
+
+	mr.asserted = true
+
+	if mr.callCount == 0 {
+		tb.Errorf("url: %s is mocked but never called. It was called %d times", mr.path, mr.callCount)
+		return
+	}
+	assert.Equal(tb, expected, mr.callCount, fmt.Sprintf("url: %s expected to be called %d times. It was called %d times", mr.path, expected, mr.callCount))
+}
+
 func (mr *mockResponse) checkFilter(r *http.Request) bool {
 	if mr.filter == nil {
 		return true
 	}
 	return mr.filter(r)
 }
+
 func (mr *mockResponse) isDepleted() bool {
+	if mr.maxcalls != 0 && mr.callCount >= mr.maxcalls {
+		return true
+	}
+
 	if len(mr.callbacks) == 0 {
 		return false
 	}
@@ -157,6 +195,14 @@ func (m *Mock) Close() {
 	m.server.Close()
 }
 
+// Mock registers a new mock response for the given path and response body.
+// Optionally, callback functions can be provided to handle the incoming *http.Request.
+// If callback functions are provided, the mock will only match as many times as there are callbacks;
+// each callback will be used once in order. After all callbacks are used, the mock will no longer match.
+//
+// Headers are defaulted to "Content-Type: application/json".
+//
+// Returns a pointer to the created mockResponse.
 func (m *Mock) Mock(path, resp string, callback ...func(*http.Request) int) *mockResponse {
 	mr := &mockResponse{
 		callbacks: callback,
@@ -174,9 +220,15 @@ func (m *Mock) Mock(path, resp string, callback ...func(*http.Request) int) *moc
 	return mr
 }
 
-func (m *Mock) MockResponder(path string, resp func(http.ResponseWriter, *http.Request)) *mockResponse {
+// MockFunc registers a new mock response for the given path using a custom responder function.
+// The responder function receives the http.ResponseWriter and *http.Request for custom handling.
+//
+// Headers are defaulted to "Content-Type: application/json".
+//
+// Returns a pointer to the created mockResponse.
+func (m *Mock) MockFunc(path string, responder func(http.ResponseWriter, *http.Request)) *mockResponse {
 	mr := &mockResponse{
-		responder: resp,
+		responder: responder,
 		path:      path,
 		headers:   make(map[string]string),
 		method:    "GET",
@@ -190,6 +242,8 @@ func (m *Mock) MockResponder(path string, resp func(http.ResponseWriter, *http.R
 	return mr
 }
 
+// AssertCallCount checks that all mocks for the given method and path was called the expected number of times in total.
+// If the mocks was never called, it reports an error. Otherwise, it asserts that the call count matches the expected value.
 func (m *Mock) AssertCallCount(tb testing.TB, method, path string, expected int) {
 	m.Lock()
 
@@ -206,9 +260,11 @@ func (m *Mock) AssertCallCount(tb testing.TB, method, path string, expected int)
 		return
 	}
 	m.Unlock()
-	assert.Equal(tb, expected, cnt, path)
+	assert.Equal(tb, expected, cnt, fmt.Sprintf("url: %s %s expected to be called %d times. It was called %d times", method, path, expected, cnt))
 }
 
+// AssertCallCountAsserted checks that all mocked responses have been asserted with AssertCallCount.
+// If any mock was called but not asserted, it reports an error.
 func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
 	for _, mr := range m.mockResponses {
 		if !mr.asserted {
@@ -217,12 +273,16 @@ func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
 	}
 }
 
+// AssertNoMissingMocks checks if there were any requests made to URLs that were not mocked.
+// If any such requests exist, it reports an error for each.
 func (m *Mock) AssertNoMissingMocks(tb testing.TB) {
 	for url, cnt := range m.unmockedRequests {
 		tb.Errorf("url: %s is called but not mocked. It was called %d times", url, cnt)
 	}
 }
 
+// AssertMocksCalled checks that all mocked responses were actually called at least once or asserted.
+// If any mock was never called and not asserted, it reports an error.
 func (m *Mock) AssertMocksCalled(tb testing.TB) {
 	for _, mr := range m.mockResponses {
 		if mr.callCount == 0 && !mr.asserted {
