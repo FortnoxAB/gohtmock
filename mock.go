@@ -37,11 +37,16 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer m.Unlock()
 
 	var matches []*mockResponse
+	var depleted []*mockResponse
 	for _, v := range m.mockResponses {
-		if v.path == path && v.method == method && !v.isDepleted() {
-			matches = append(matches, v)
+		if v.path != path || v.method != method {
 			continue
 		}
+		if v.isDepleted() {
+			depleted = append(depleted, v)
+			continue
+		}
+		matches = append(matches, v)
 	}
 
 	matches = m.withFiltersFirst(matches)
@@ -51,6 +56,10 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			mr = v
 			break
 		}
+	}
+
+	if mr == nil && len(depleted) > 0 {
+		log.Printf("No more mock responses available for %s %s; all have reached their call limit", method, path)
 	}
 
 	if mr == nil {
@@ -80,7 +89,7 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := w.Write([]byte(mr.resp))
 	if err != nil {
-		log.Fatal("error writing respose for ", path, err)
+		log.Fatal("error writing response for ", path, err)
 	}
 }
 
@@ -176,6 +185,9 @@ func (mr *mockResponse) checkFilter(r *http.Request) bool {
 }
 
 func (mr *mockResponse) isDepleted() bool {
+	mr.Lock()
+	defer mr.Unlock()
+
 	if mr.maxcalls != 0 && mr.callCount >= mr.maxcalls {
 		return true
 	}
@@ -246,6 +258,7 @@ func (m *Mock) MockFunc(path string, responder func(http.ResponseWriter, *http.R
 // If the mocks was never called, it reports an error. Otherwise, it asserts that the call count matches the expected value.
 func (m *Mock) AssertCallCount(tb testing.TB, method, path string, expected int) {
 	m.Lock()
+	defer m.Unlock()
 
 	cnt := 0
 	for _, mr := range m.mockResponses {
@@ -256,16 +269,17 @@ func (m *Mock) AssertCallCount(tb testing.TB, method, path string, expected int)
 	}
 	if cnt == 0 {
 		tb.Errorf("mocked but never called path: %s method: %s", path, method)
-		m.Unlock()
 		return
 	}
-	m.Unlock()
 	assert.Equal(tb, expected, cnt, fmt.Sprintf("url: %s %s expected to be called %d times. It was called %d times", method, path, expected, cnt))
 }
 
 // AssertCallCountAsserted checks that all mocked responses have been asserted with AssertCallCount.
 // If any mock was called but not asserted, it reports an error.
 func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
+	m.Lock()
+	defer m.Unlock()
+
 	for _, mr := range m.mockResponses {
 		if !mr.asserted {
 			tb.Errorf("url: %s is mocked but never asserted. It was called %d times", mr.path, mr.callCount)
@@ -276,6 +290,9 @@ func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
 // AssertNoMissingMocks checks if there were any requests made to URLs that were not mocked.
 // If any such requests exist, it reports an error for each.
 func (m *Mock) AssertNoMissingMocks(tb testing.TB) {
+	m.Lock()
+	defer m.Unlock()
+
 	for url, cnt := range m.unmockedRequests {
 		tb.Errorf("url: %s is called but not mocked. It was called %d times", url, cnt)
 	}
@@ -284,6 +301,9 @@ func (m *Mock) AssertNoMissingMocks(tb testing.TB) {
 // AssertMocksCalled checks that all mocked responses were actually called at least once or asserted.
 // If any mock was never called and not asserted, it reports an error.
 func (m *Mock) AssertMocksCalled(tb testing.TB) {
+	m.Lock()
+	defer m.Unlock()
+
 	for _, mr := range m.mockResponses {
 		if mr.callCount == 0 && !mr.asserted {
 			tb.Errorf("%s %s mocked but never called.", mr.method, mr.path)
