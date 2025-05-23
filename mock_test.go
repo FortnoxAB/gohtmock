@@ -96,9 +96,9 @@ func TestMockResponderWithFilters(t *testing.T) {
 		return r.URL.Query().Get("id") == "2"
 	})
 
-	assertGetResults(t, mock.URL()+"/test?id=1", "user 1", http.StatusOK)
-	assertGetResults(t, mock.URL()+"/test?id=3", "user not found", http.StatusNotFound)
-	assertGetResults(t, mock.URL()+"/test?id=2", "user 2", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=1", "user 1", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=3", "user not found", http.StatusNotFound)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=2", "user 2", http.StatusOK)
 	mock.AssertCallCount(t, http.MethodGet, "/test", 3)
 	mock.AssertCallCountAsserted(t)
 }
@@ -127,9 +127,9 @@ func TestMockResponderWithFiltersAsserts(t *testing.T) {
 		w.Write([]byte("user not found"))
 	})
 
-	assertGetResults(t, mock.URL()+"/test?id=1", "user 1", http.StatusOK)
-	assertGetResults(t, mock.URL()+"/test?id=3", "user not found", http.StatusNotFound)
-	assertGetResults(t, mock.URL()+"/test?id=2", "user 2", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=1", "user 1", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=3", "user not found", http.StatusNotFound)
+	assertBodyAndStatus(t, mock.URL()+"/test?id=2", "user 2", http.StatusOK)
 	mr1.AssertCallCount(t, 1)
 	mr2.AssertCallCount(t, 1)
 	mr3.AssertCallCount(t, 1)
@@ -143,9 +143,9 @@ func TestAllMocksLimits(t *testing.T) {
 	mock.Mock("/test", "once").Once()
 	mock.Mock("/test", "times").Times(2)
 
-	assertGetResults(t, mock.URL()+"/test", "once", http.StatusOK)
-	assertGetResults(t, mock.URL()+"/test", "times", http.StatusOK)
-	assertGetResults(t, mock.URL()+"/test", "times", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test", "once", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test", "times", http.StatusOK)
+	assertBodyAndStatus(t, mock.URL()+"/test", "times", http.StatusOK)
 	mock.AssertCallCount(t, "GET", "/test", 3)
 	mock.AssertCallCountAsserted(t)
 	mock.AssertNoMissingMocks(t)
@@ -192,18 +192,14 @@ func TestNotAssertNoMissingMocks(t *testing.T) {
 	assert.True(t, newT.Failed())
 }
 
-func assertGetResults(t *testing.T, path, expBody string, expStatus int) bool {
+func assertBodyAndStatus(t *testing.T, path, expBody string, expStatus int) bool {
 	resp, err := http.Get(path)
 	assert.NoError(t, err)
-	if !assert.Equal(t, expStatus, resp.StatusCode) {
-		return assert.Fail(t, "Expected status %s but got %s", expStatus, resp.StatusCode)
-	}
+	assert.Equal(t, expStatus, resp.StatusCode, "Expected status %d but got %d", expStatus, resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	if !assert.Equal(t, expBody, string(body)) {
-		return assert.Fail(t, "Expected body %s but got %s", expBody, string(body))
-	}
+	assert.Equal(t, expBody, string(body), "Expected body %s but got %s", expBody, string(body))
 
 	return true
 }

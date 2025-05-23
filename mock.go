@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -32,6 +33,7 @@ func New() *Mock {
 func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	method := r.Method
 	path := r.URL.Path
+	mapKey := method + " " + path
 	var mr *mockResponse
 	m.Lock()
 	defer m.Unlock()
@@ -65,7 +67,7 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if mr == nil {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "%s not found", path)
-		m.unmockedRequests[method+path]++
+		m.unmockedRequests[mapKey]++
 		return
 	}
 
@@ -283,6 +285,7 @@ func (m *Mock) AssertCallCountAsserted(tb testing.TB) {
 	for _, mr := range m.mockResponses {
 		if !mr.asserted {
 			tb.Errorf("url: %s is mocked but never asserted. It was called %d times", mr.path, mr.callCount)
+			tb.Errorf(`create a mock with: .AssertCallCount(t, "%s", "%s", %d)`, mr.method, mr.path, mr.callCount)
 		}
 	}
 }
@@ -293,8 +296,17 @@ func (m *Mock) AssertNoMissingMocks(tb testing.TB) {
 	m.Lock()
 	defer m.Unlock()
 
-	for url, cnt := range m.unmockedRequests {
-		tb.Errorf("url: %s is called but not mocked. It was called %d times", url, cnt)
+	for request, cnt := range m.unmockedRequests {
+		method := strings.Split(request, " ")[0]
+		url := strings.Split(request, " ")[1]
+		tb.Errorf("url: %s is called but not mocked. It was called %d times", request, cnt)
+		if method == "GET" {
+			tb.Errorf(`create a mock with: .Mock("%s", "response")`, url)
+			continue
+
+		}
+		tb.Errorf(`create a mock with: .Mock("%s", "response").SetMethod("%s")`, url, method)
+
 	}
 }
 
